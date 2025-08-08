@@ -262,9 +262,12 @@ def enable_ini(path):
                 print(f"Found .ini files in {root}, processing this directory...")
                 for file in ini_files_in_dir:
                     file_path = os.path.join(root, file)
-                    if "disabled" in root.lower() or "disabled" in file.lower():
+                    if "disabled" in file.lower():
                         print(f"\tRe-enabling {file_path}")
-                        new_path = re.compile("disabled", re.IGNORECASE).sub("", file_path)
+                        dir_name = os.path.dirname(file_path)
+                        file_name = os.path.basename(file_path)
+                        new_file_name = re.compile("disabled", re.IGNORECASE).sub("", file_name)
+                        new_path = os.path.join(dir_name, new_file_name)
                         if not safe_rename_file(file_path, new_path):
                             print(f"Failed to re-enable {file_path}")
 
