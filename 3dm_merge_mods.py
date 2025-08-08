@@ -112,7 +112,7 @@ def write_namespace_ini(original_content, namespace, original_path, character_na
     processed_content = process_ini_content(original_content, character_name, namespace, remove_hash=True, add_suffix=True)
 
     output_dir = os.path.dirname(original_path)
-    filename = f"{character_name}.{namespace}"
+    filename = f"{character_name}.namespace"
     output_path = os.path.join(output_dir, f"{filename}.ini")
 
     if safe_write_file(output_path, processed_content):
@@ -229,6 +229,8 @@ def collect_ini(path, ignore):
             if root == path and ignore.lower() in file.lower():
                 continue
             if "disabled" in root.lower() or "disabled" in file.lower():
+                continue
+            if "namespace" in file.lower():
                 continue
             if os.path.splitext(file)[1] == ".ini":
                 ini_files.append(os.path.join(root, file))
