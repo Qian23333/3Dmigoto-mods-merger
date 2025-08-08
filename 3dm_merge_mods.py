@@ -9,96 +9,134 @@ import os
 import re
 import argparse
 
+def safe_read_file(file_path):
+    """
+    Safely read a file with basic error handling.
+    Returns file content as string or None if failed.
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except (IOError, OSError, UnicodeDecodeError) as e:
+        print(f"Error reading file {file_path}: {e}")
+        return None
+
+def safe_write_file(file_path, content, max_retries=3):
+    """
+    Safely write content to a file with retry mechanism.
+    Returns True if successful, False otherwise.
+    """
+    for attempt in range(max_retries):
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            return True
+        except (IOError, OSError) as e:
+            print(f"Error writing to {file_path} (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                input("Press ENTER to retry, or Ctrl+C to cancel...")
+            else:
+                print(f"Failed to write {file_path} after {max_retries} attempts")
+    return False
+
+def safe_rename_file(old_path, new_path, max_retries=3):
+    """
+    Safely rename a file with retry mechanism.
+    Returns True if successful, False otherwise.
+    """
+    for attempt in range(max_retries):
+        try:
+            os.rename(old_path, new_path)
+            return True
+        except OSError as e:
+            print(f"Error renaming {old_path} (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                input("Press ENTER to retry, or Ctrl+C to cancel...")
+            else:
+                print(f"Failed to rename {old_path} after {max_retries} attempts")
+    return False
+
 def extract_character_name(ini_path):
     """
     Extract character name from the first TextureOverride section.
     Returns the first capitalized word after TextureOverride.
     """
-    try:
-        with open(ini_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                stripped_line = line.strip()
-                if stripped_line.lower().startswith('[textureoverride'):
-                    # Extract the suffix after TextureOverride
-                    suffix = stripped_line[len('[TextureOverride'):-1]
-                    # Find first capitalized word using regex
-                    match = re.search(r'[A-Z][a-z]*(?=[A-Z]|$)', suffix)
-                    if match:
-                        return match.group(0)
-                    break
-    except Exception as e:
-        print(f"Error extracting character name from {ini_path}: {e}")
+    content = safe_read_file(ini_path)
+    if not content:
+        return ""
+
+    for line in content.splitlines():
+        stripped_line = line.strip()
+        if stripped_line.lower().startswith('[textureoverride'):
+            # Extract the suffix after TextureOverride
+            suffix = stripped_line[len('[TextureOverride'):-1]
+            # Find first capitalized word using regex
+            match = re.search(r'[A-Z][a-z]*(?=[A-Z]|$)', suffix)
+            if match:
+                return match.group(0)
+            break
     return ""
 
-def process_ini_file(ini_path, character_name, namespace):
+def process_ini_content(original_content, character_name, namespace, remove_hash=False, add_suffix=False):
     """
-    Processes a single ini file by injecting a 'namespace = ...' directive
-    and converting [TextureOverride...] sections to [CommandList...].
-    Returns the processed content and original content for later use.
+    Process ini content with various transformations.
+    Returns processed content as string.
     """
-    print(f"Processing {ini_path} with namespace '{namespace}'...")
+    lines = [f"namespace = {character_name}\\{namespace}\n"]
 
-    processed_lines = [f"namespace = {character_name}\\{namespace}\n"]
-    original_lines = []
+    # Process each line
+    for line in original_content.splitlines(keepends=True):
+        stripped = line.strip().lower()
 
-    try:
-        with open(ini_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                original_lines.append(line)
-                stripped_line = line.strip()
-                if stripped_line.lower().startswith('[textureoverride'):
-                    suffix = stripped_line[len('[TextureOverride'):-1]
-                    processed_lines.append(f"[CommandList{suffix}]\n")
-                else:
-                    processed_lines.append(line)
+        # Skip hash and match_first_index lines if requested
+        if remove_hash and ((stripped.startswith('hash') or stripped.startswith('match_first_index')) and '=' in stripped):
+            continue
 
-        print(f" -> Processed {ini_path} in memory")
-        return ''.join(processed_lines), ''.join(original_lines)
+        # Convert TextureOverride to CommandList
+        if stripped.startswith('[textureoverride'):
+            prefix_len = len('[TextureOverride')
+            suffix = line.strip()[prefix_len:-1]
+            if add_suffix:
+                lines.append(f'[CommandList{suffix}.{namespace}]\n')
+            else:
+                lines.append(f"[CommandList{suffix}]\n")
+        else:
+            lines.append(line)
 
-    except Exception as e:
-        print(f"Error processing {ini_path}: {e}")
-        return None, None
+    return ''.join(lines)
 
 def write_namespace_ini(original_content, namespace, original_path, character_name):
-    lines_without_hash = []
-    for line in original_content.split('\n'):
-        stripped = line.strip().lower()
-        if not ((stripped.startswith('hash') or stripped.startswith('match_first_index')) and '=' in stripped):
-            lines_without_hash.append(line)
-
-    lines_without_override = [f'namespace = {character_name}\\{namespace}\n\n']
-    for line in lines_without_hash:
-        if line.lower().startswith('[textureoverride'):
-            prefix_len = len('[TextureOverride')
-            line = f'[CommandList{line[prefix_len:-1]}.{namespace}]'
-        lines_without_override.append(line)
+    """
+    Write namespace ini file with hash lines removed and suffix added to CommandList names.
+    """
+    processed_content = process_ini_content(original_content, character_name, namespace, remove_hash=True, add_suffix=True)
 
     output_dir = os.path.dirname(original_path)
     filename = f"{character_name}.{namespace}"
     output_path = os.path.join(output_dir, f"{filename}.ini")
 
-    try:
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines_without_override))
+    if safe_write_file(output_path, processed_content):
         print(f" -> Saved namespace file to {output_path}")
         return output_path
-
-    except Exception as e:
-        print(f"Error writing namespace file: {e}")
+    else:
         return None
 
-def create_master_ini(processed_contents, original_paths, args, character_name):
+def create_master_ini(file_data, args, character_name):
     """
     Creates the master ini file by grouping command lists by (hash, index).
-    Uses processed_contents (list of processed file contents) and original_paths for reference.
+    Uses file_data (list of (path, content) tuples) for processing.
     """
     print("\nCreating master .ini file...")
 
     command_groups = {}
-    order_map = {str(i): i for i in range(len(original_paths))}
+    order_map = {str(i): i for i in range(len(file_data))}
 
-    for i, processed_content in enumerate(processed_contents):
+    for i, (ini_path, original_content) in enumerate(file_data):
         namespace = str(i)
+        print(f"Processing {ini_path} with namespace '{namespace}'...")
+
+        processed_content = process_ini_content(original_content, character_name, namespace, remove_hash=False, add_suffix=False)
+        print(f" -> Processed {ini_path} in memory")
 
         current_section_data = {}
         for line in processed_content.split('\n'):
@@ -130,9 +168,11 @@ def create_master_ini(processed_contents, original_paths, args, character_name):
             command_groups[key].append(current_section_data)
 
     ini_content = []
-    ini_content.append(f"; Merged Mod: {', '.join(original_paths)}\n\n")
+    # Extract paths from file_data for the comment
+    paths = [path for path, _ in file_data]
+    ini_content.append(f"; Merged Mod: {', '.join(paths)}\n\n")
 
-    swap_count = len(original_paths)
+    swap_count = len(file_data)
     ini_content.append("[Constants]")
     ini_content.append(f"global persist $swapvar = 0")
     if args.active:
@@ -178,10 +218,9 @@ def create_master_ini(processed_contents, original_paths, args, character_name):
     ini_content.append("; .ini generated by 3Dmigoto mods merger script\n")
     ini_content.append("; If you have any issues or find any bugs, please open a ticket at https://github.com/Qian23333/3Dmigoto-mods-merger\n")
 
-    with open(args.name, "w", encoding="utf-8") as f:
-        f.write("\n".join(ini_content))
-
-    print(f"Master file '{args.name}' created successfully.")
+    content = "\n".join(ini_content)
+    if safe_write_file(args.name, content):
+        print(f"Master file '{args.name}' created successfully.")
 
 def collect_ini(path, ignore):
     ini_files = []
@@ -199,9 +238,11 @@ def enable_ini(path):
     for root, _, files in os.walk(path):
         for file in files:
             if os.path.splitext(file)[1] == ".ini" and ("disabled" in root.lower() or "disabled" in file.lower()):
-                print(f"\tRe-enabling {os.path.join(root, file)}")
-                new_path = re.compile("disabled", re.IGNORECASE).sub("", os.path.join(root, file))
-                os.rename(os.path.join(root, file), new_path)
+                old_path = os.path.join(root, file)
+                print(f"\tRe-enabling {old_path}")
+                new_path = re.compile("disabled", re.IGNORECASE).sub("", old_path)
+                if not safe_rename_file(old_path, new_path):
+                    print(f"Failed to re-enable {old_path}")
 
 def get_user_order(ini_files):
     choice = input()
@@ -254,8 +295,17 @@ def main():
     ordered_files = get_user_order(ini_files)
 
     print("\nProcessing files in the selected order...")
-    processed_contents = []
-    original_contents = []
+
+    # Pre-read all files into memory as (path, content) tuples to avoid repeated IO
+    file_data = []
+    for ini_path in ordered_files:
+        print(f"Reading {ini_path}...")
+        content = safe_read_file(ini_path)
+        if not content:
+            print(f"Failed to read {ini_path}, exiting...")
+            return
+        file_data.append((ini_path, content))
+        print(f" -> Loaded {ini_path} into memory")
 
     # Extract default character name from first file
     default_character_name = extract_character_name(ordered_files[0]) if ordered_files else ""
@@ -269,22 +319,11 @@ def main():
 
     print(f"Using character name: '{character_name}'")
 
-    for i, ini_path in enumerate(ordered_files):
-        namespace = str(i) # Use the order index as the namespace
-        processed_content, original_content = process_ini_file(ini_path, character_name, namespace)
-        if processed_content and original_content:
-            processed_contents.append(processed_content)
-            original_contents.append(original_content)
-
-    if not processed_contents:
-        print("No files were processed successfully. Exiting.")
-        return
-
     if not args.key:
-        print("\nPlease enter the key that will be used to cycle mods (e.g., K):")
+        print("\nPlease enter the key that will be used to cycle mods (e.g. K or VK_RIGHT):")
         key = input()
-        while not key or len(key) != 1:
-            print("\nKey not recognized, must be a single letter.")
+        while not key or not (len(key) == 1 or key.lower().startswith("vk_")):
+            print("\nKey not recognized, must be a single letter or virtual key code.")
             key = input()
         args.key = key.lower()
 
@@ -296,12 +335,12 @@ def main():
         else:
             args.back_key = ""
 
-    create_master_ini(processed_contents, ordered_files, args, character_name)
+    create_master_ini(file_data, args, character_name)
 
     # Write namespace ini files with hash removed
     print("\nWriting namespace .ini files...")
     namespace_files = []
-    for i, (original_content, original_path) in enumerate(zip(original_contents, ordered_files)):
+    for i, (original_path, original_content) in enumerate(file_data):
         namespace = str(i)
         namespace_file = write_namespace_ini(original_content, namespace, original_path, character_name)
         if namespace_file:
@@ -309,12 +348,12 @@ def main():
 
     if not args.store:
         print("\nDisabling original .ini files...")
-        for file in ordered_files: # Disable the original files in the correct order
-            try:
-                os.rename(file, os.path.join(os.path.dirname(file), "DISABLED" + os.path.basename(file)))
-                print(f" -> Disabled {file}")
-            except OSError as e:
-                print(f"Error disabling {file}: {e}")
+        for original_path, _ in file_data:  # Use tuple unpacking to get path
+            disabled_name = os.path.join(os.path.dirname(original_path), "DISABLED" + os.path.basename(original_path))
+            if safe_rename_file(original_path, disabled_name):
+                print(f" -> Disabled {original_path}")
+            else:
+                print(f"Failed to disable {original_path}")
 
     print("\nAll operations completed successfully.")
 
