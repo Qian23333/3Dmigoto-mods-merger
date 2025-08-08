@@ -237,14 +237,30 @@ def collect_ini(path, ignore):
     return ini_files
 
 def enable_ini(path):
-    for root, _, files in os.walk(path):
-        for file in files:
-            if os.path.splitext(file)[1] == ".ini" and ("disabled" in root.lower() or "disabled" in file.lower()):
-                old_path = os.path.join(root, file)
-                print(f"\tRe-enabling {old_path}")
-                new_path = re.compile("disabled", re.IGNORECASE).sub("", old_path)
-                if not safe_rename_file(old_path, new_path):
-                    print(f"Failed to re-enable {old_path}")
+    """
+    Recursively finds and re-enables .ini files.
+    It processes the first directory in a branch that contains .ini files and then skips deeper directories in that branch.
+    This function will always check all top-level subdirectories.
+    """
+    subdirs = [d.path for d in os.scandir(path) if d.is_dir()]
+
+    for subdir in subdirs:
+        for root, dirs, files in os.walk(subdir, topdown=True):
+            ini_files_in_dir = [f for f in files if f.lower().endswith('.ini')]
+
+            if ini_files_in_dir:
+                print(f"Found .ini files in {root}, processing this directory...")
+                for file in ini_files_in_dir:
+                    file_path = os.path.join(root, file)
+                    if "disabled" in root.lower() or "disabled" in file.lower():
+                        print(f"\tRe-enabling {file_path}")
+                        new_path = re.compile("disabled", re.IGNORECASE).sub("", file_path)
+                        if not safe_rename_file(file_path, new_path):
+                            print(f"Failed to re-enable {file_path}")
+
+                # Stop descending further down this path
+                dirs[:] = []
+                print(f" -> Finished processing {root}, skipping its subdirectories.")
 
 def get_user_order(ini_files):
     choice = input()
