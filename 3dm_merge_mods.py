@@ -85,11 +85,21 @@ def process_ini_content(original_content, character_name, namespace, remove_hash
     lines = [f"namespace = {character_name}\\{namespace}\n"]
 
     # Process each line
+    inside_textureoverride_section = False
+
     for line in original_content.splitlines(keepends=True):
         stripped = line.strip().lower()
 
-        # Skip hash and match_first_index lines if requested
-        if remove_hash and ((stripped.startswith('hash') or stripped.startswith('match_first_index')) and '=' in stripped):
+        # Check if we're entering a new section
+        if stripped.startswith('['):
+            if stripped.startswith('[textureoverride'):
+                inside_textureoverride_section = True
+            else:
+                inside_textureoverride_section = False
+
+        # Skip hash and match_first_index lines if requested AND we're inside a textureoverride section
+        if (remove_hash and inside_textureoverride_section and
+            ((stripped.startswith('hash') or stripped.startswith('match_first_index')) and '=' in stripped)):
             continue
 
         # Convert TextureOverride to CommandList
