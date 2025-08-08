@@ -182,7 +182,7 @@ def create_master_ini(file_data, args, character_name):
         ini_content.append(f"condition = $active == 1")
     ini_content.append(f"key = {args.key}")
     if args.back_key:
-        ini_content.append(f"back_key = {args.back_key}")
+        ini_content.append(f"back = {args.back_key}")
     ini_content.append(f"type = cycle")
     ini_content.append(f"$swapvar = {','.join([str(x) for x in range(swap_count)])}")
     ini_content.append("\n")
@@ -325,13 +325,13 @@ def main():
         while not key or not (len(key) == 1 or key.lower().startswith("vk_")):
             print("\nKey not recognized, must be a single letter or virtual key code.")
             key = input()
-        args.key = key.lower()
+        args.key = key
 
     if not args.back_key:
         print("Please enter the key that will be used to go back to the previous mod (or press ENTER to skip):")
         back_key = input()
-        if back_key and len(back_key) == 1:
-            args.back_key = back_key.lower()
+        if back_key and (len(back_key) == 1 or back_key.lower().startswith("vk_")):
+            args.back_key = back_key
         else:
             args.back_key = ""
 
