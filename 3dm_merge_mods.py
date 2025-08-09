@@ -77,7 +77,7 @@ def extract_character_name(ini_path):
             break
     return ""
 
-def process_ini_content(original_content, character_name, namespace, remove_hash=False, add_suffix=False):
+def process_ini_content(original_content, character_name, namespace, remove_hash=False):
     """
     Process ini content with various transformations.
     Returns processed content as string.
@@ -85,32 +85,30 @@ def process_ini_content(original_content, character_name, namespace, remove_hash
     lines = [f"namespace = {character_name}\\{namespace}\n"]
 
     # Process each line
-    inside_textureoverride_section = False
+    inside_override_section = False
 
     for line in original_content.splitlines(keepends=True):
         stripped = line.strip().lower()
+        is_texture_override = stripped.startswith('[textureoverride')
+        is_shader_override = stripped.startswith('[shaderoverride')
 
         # Check if we're entering a new section
         if stripped.startswith('['):
-            if stripped.startswith('[textureoverride'):
-                inside_textureoverride_section = True
+            if is_texture_override or is_shader_override:
+                inside_override_section = True
             else:
-                inside_textureoverride_section = False
+                inside_override_section = False
 
-        # Skip hash/match_first_index/filter_index lines if requested AND we're inside a textureoverride section
+        # Skip hash/match_first_index/filter_index lines if requested AND we're inside an override section
         skip_keys = ['hash', 'match_first_index', 'filter_index']
-        if (remove_hash and inside_textureoverride_section and
+        if (remove_hash and inside_override_section and
             any(stripped.startswith(key) and '=' in stripped for key in skip_keys)):
             continue
 
-        # Convert TextureOverride to CommandList
-        if stripped.startswith('[textureoverride'):
-            prefix_len = len('[TextureOverride')
-            suffix = line.strip()[prefix_len:-1]
-            if add_suffix:
-                lines.append(f'[CommandList{suffix}.{namespace}]\n')
-            else:
-                lines.append(f"[CommandList{suffix}]\n")
+        # Convert Override to CommandList
+        if is_texture_override or is_shader_override:
+            original_section_name = line.strip()[1:-1]
+            lines.append(f"[CommandList{original_section_name}]\n")
         else:
             lines.append(line)
 
@@ -118,9 +116,9 @@ def process_ini_content(original_content, character_name, namespace, remove_hash
 
 def write_namespace_ini(original_content, namespace, original_path, character_name):
     """
-    Write namespace ini file with hash lines removed and suffix added to CommandList names.
+    Write namespace ini file with hash lines removed.
     """
-    processed_content = process_ini_content(original_content, character_name, namespace, remove_hash=True, add_suffix=True)
+    processed_content = process_ini_content(original_content, character_name, namespace, remove_hash=True)
 
     output_dir = os.path.dirname(original_path)
     filename = f"{character_name}.namespace"
@@ -146,7 +144,7 @@ def create_master_ini(file_data, args, character_name):
         namespace = str(i)
         print(f"Processing {ini_path} with namespace '{namespace}'...")
 
-        processed_content = process_ini_content(original_content, character_name, namespace, remove_hash=False, add_suffix=False)
+        processed_content = process_ini_content(original_content, character_name, namespace, remove_hash=False)
         print(f" -> Processed {ini_path} in memory")
 
         current_section_data = {}
@@ -177,8 +175,8 @@ def create_master_ini(file_data, args, character_name):
 
                 # Reset for the new section.
                 cmd_name = stripped[1:-1]
-                suffix = cmd_name[len('CommandList'):] if cmd_name.lower().startswith('commandlist') else ''
-                current_section_data = {'namespace': namespace, 'suffix': suffix}
+                original_section_name = cmd_name[len('CommandList'):] if cmd_name.lower().startswith('commandlist') else ''
+                current_section_data = {'namespace': namespace, 'original_section_name': original_section_name}
 
             elif '=' in stripped:
                 key, val = stripped.split('=', 1)
@@ -213,8 +211,8 @@ def create_master_ini(file_data, args, character_name):
     for (hash_val, index, index_type), commands in command_groups.items():
         sorted_commands = sorted(commands, key=lambda x: order_map.get(x['namespace'], 999))
 
-        suffix = sorted_commands[0]['suffix']
-        ini_content.append(f"[TextureOverride{suffix}]")
+        original_section_name = sorted_commands[0]['original_section_name']
+        ini_content.append(f"[{original_section_name}]")
         ini_content.append(f"hash = {hash_val}")
         if index != '-1' and index_type:
             ini_content.append(f"{index_type} = {index}")
@@ -223,14 +221,14 @@ def create_master_ini(file_data, args, character_name):
             mod_index = order_map.get(command_data['namespace'])
             if mod_index is not None:
                 condition = "if" if i == 0 else "else if"
-                run_target = f"CommandList\\{character_name}\\{command_data['namespace']}\\{command_data['suffix']}.{command_data['namespace']}"
+                run_target = f"CommandList\\{character_name}\\{command_data['namespace']}\\{command_data['original_section_name']}"
                 ini_content.append(f"{condition} $swapvar == {mod_index}")
                 ini_content.append(f"\trun = {run_target}")
 
         if commands:
             ini_content.append("endif")
 
-        if args.active and "position" in suffix.lower():
+        if args.active and "position" in original_section_name.lower():
              ini_content.append("$active = 1")
         ini_content.append("\n")
 
