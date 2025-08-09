@@ -150,12 +150,14 @@ def create_master_ini(file_data, args, character_name):
         print(f" -> Processed {ini_path} in memory")
 
         current_section_data = {}
-        for line in processed_content.split('\n'):
+        # Add a sentinel section header to trigger processing for the last real section
+        for line in processed_content.split('\n') + ['[EOF]']:
             stripped = line.strip()
             if not stripped or stripped.startswith(';') or stripped.startswith('namespace'):
                 continue
 
             if stripped.startswith('[') and stripped.endswith(']'):
+                # A new section header triggers processing of the previous section.
                 if current_section_data.get('hash'):
                     # Determine index type and value
                     if 'match_first_index' in current_section_data:
@@ -173,6 +175,7 @@ def create_master_ini(file_data, args, character_name):
                         command_groups[key] = []
                     command_groups[key].append(current_section_data)
 
+                # Reset for the new section.
                 cmd_name = stripped[1:-1]
                 suffix = cmd_name[len('CommandList'):] if cmd_name.lower().startswith('commandlist') else ''
                 current_section_data = {'namespace': namespace, 'suffix': suffix}
@@ -182,23 +185,6 @@ def create_master_ini(file_data, args, character_name):
                 key, val = key.strip(), val.strip()
                 if key.lower() in ['hash', 'match_first_index', 'filter_index']:
                     current_section_data[key.lower()] = val
-
-        if current_section_data.get('hash'):
-            # Determine index type and value for the last section
-            if 'match_first_index' in current_section_data:
-                index = current_section_data['match_first_index']
-                index_type = 'match_first_index'
-            elif 'filter_index' in current_section_data:
-                index = current_section_data['filter_index']
-                index_type = 'filter_index'
-            else:
-                index = '-1'
-                index_type = None
-
-            key = (current_section_data['hash'], index, index_type)
-            if key not in command_groups:
-                command_groups[key] = []
-            command_groups[key].append(current_section_data)
 
     ini_content = []
     # Extract paths from file_data for the comment
