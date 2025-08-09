@@ -100,7 +100,7 @@ def process_ini_content(original_content, character_name, namespace, remove_hash
                 inside_override_section = False
 
         # Skip hash/match_first_index/filter_index lines if requested AND we're inside an override section
-        skip_keys = ['hash', 'match_first_index', 'filter_index']
+        skip_keys = ['hash', 'match_first_index', 'filter_index', 'match_priority']
         if (remove_hash and inside_override_section and
             any(stripped.startswith(key) and '=' in stripped for key in skip_keys)):
             continue
@@ -168,7 +168,12 @@ def create_master_ini(file_data, args, character_name):
                         index = '-1'
                         index_type = None
 
-                    key = (current_section_data['hash'], index, index_type)
+                    if 'match_priority' in current_section_data:
+                        priority = current_section_data['match_priority']
+                    else:
+                        priority = None
+
+                    key = (current_section_data['hash'], index, index_type, priority)
                     if key not in command_groups:
                         command_groups[key] = []
                     command_groups[key].append(current_section_data)
@@ -181,7 +186,7 @@ def create_master_ini(file_data, args, character_name):
             elif '=' in stripped:
                 key, val = stripped.split('=', 1)
                 key, val = key.strip(), val.strip()
-                if key.lower() in ['hash', 'match_first_index', 'filter_index']:
+                if key.lower() in ['hash', 'match_first_index', 'filter_index', 'match_priority']:
                     current_section_data[key.lower()] = val
 
     ini_content = []
@@ -208,7 +213,7 @@ def create_master_ini(file_data, args, character_name):
         ini_content.append("post $active = 0\n\n")
 
     ini_content.append("; Master Overrides\n")
-    for (hash_val, index, index_type), commands in command_groups.items():
+    for (hash_val, index, index_type, priority), commands in command_groups.items():
         sorted_commands = sorted(commands, key=lambda x: order_map.get(x['namespace'], 999))
 
         original_section_name = sorted_commands[0]['original_section_name']
@@ -216,6 +221,8 @@ def create_master_ini(file_data, args, character_name):
         ini_content.append(f"hash = {hash_val}")
         if index != '-1' and index_type:
             ini_content.append(f"{index_type} = {index}")
+        if priority:
+            ini_content.append(f"match_priority = {priority}")
 
         for i, command_data in enumerate(sorted_commands):
             mod_index = order_map.get(command_data['namespace'])
