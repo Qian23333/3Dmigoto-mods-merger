@@ -100,7 +100,7 @@ def process_ini_content(original_content, character_name, namespace, remove_hash
                 inside_override_section = False
 
         # Skip hash/match_first_index/filter_index lines if requested AND we're inside an override section
-        skip_keys = ['hash', 'match_first_index', 'filter_index', 'match_priority']
+        skip_keys = ['hash', 'match_first_index', 'filter_index', 'match_priority', 'allow_duplicate_hash']
         if (remove_hash and inside_override_section and
             any(stripped.startswith(key) and '=' in stripped for key in skip_keys)):
             continue
@@ -223,6 +223,8 @@ def create_master_ini(file_data, args, character_name):
             ini_content.append(f"{index_type} = {index}")
         if priority:
             ini_content.append(f"match_priority = {priority}")
+        if ('ShaderOverride').lower() in original_section_name.lower():
+            ini_content.append("allow_duplicate_hash = overrule")
 
         for i, command_data in enumerate(sorted_commands):
             mod_index = order_map.get(command_data['namespace'])
